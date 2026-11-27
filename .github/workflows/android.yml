@@ -5,52 +5,53 @@ on:
     push:
         branches: [main]
             paths:
-                  - 'package.json'
-                        - 'capacitor.config.ts'
-                              - 'www/**'
-                                    - '.github/workflows/android.yml'
+                  - 'android-app/**'
+                        - '.github/workflows/android.yml'
 
-                                    jobs:
-                                      build:
-                                          runs-on: ubuntu-latest
-                                              steps:
-                                                    - uses: actions/checkout@v4
+                        jobs:
+                          build:
+                              runs-on: ubuntu-latest
+                                  defaults:
+                                        run:
+                                                working-directory: android-app
+                                                    steps:
+                                                          - uses: actions/checkout@v4
 
-                                                          - uses: actions/setup-node@v4
-                                                                  with:
-                                                                            node-version: 20
+                                                                - uses: actions/setup-node@v4
+                                                                        with:
+                                                                                  node-version: 20
 
-                                                                                  - name: Install JS dependencies
-                                                                                          run: npm install
+                                                                                        - name: Install JS dependencies
+                                                                                                run: npm install
 
-                                                                                                - name: Generate native Android project from Capacitor
-                                                                                                        run: |
-                                                                                                                  npx cap add android
-                                                                                                                            npx cap sync android
-                                                                                                                            
-                                                                                                                                  - name: Pin a widely-available SDK level
-                                                                                                                                          run: |
-                                                                                                                                                    sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/' android/variables.gradle
-                                                                                                                                                              sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/' android/variables.gradle
-                                                                                                                                                              
-                                                                                                                                                                    - uses: actions/setup-java@v4
-                                                                                                                                                                            with:
-                                                                                                                                                                                      distribution: temurin
-                                                                                                                                                                                                java-version: '21'
-                                                                                                                                                                                                
-                                                                                                                                                                                                      - uses: android-actions/setup-android@v3
+                                                                                                      - name: Generate native Android project from Capacitor
+                                                                                                              run: |
+                                                                                                                        npx cap add android
+                                                                                                                                  npx cap sync android
+                                                                                                                                  
+                                                                                                                                        - name: Pin a widely-available SDK level
+                                                                                                                                                run: |
+                                                                                                                                                          sed -i 's/compileSdkVersion = .*/compileSdkVersion = 34/' android/variables.gradle
+                                                                                                                                                                    sed -i 's/targetSdkVersion = .*/targetSdkVersion = 34/' android/variables.gradle
+                                                                                                                                                                    
+                                                                                                                                                                          - uses: actions/setup-java@v4
+                                                                                                                                                                                  with:
+                                                                                                                                                                                            distribution: temurin
+                                                                                                                                                                                                      java-version: '21'
                                                                                                                                                                                                       
-                                                                                                                                                                                                            - name: Accept Android SDK licenses
-                                                                                                                                                                                                                    run: yes | sdkmanager --licenses || true
-                                                                                                                                                                                                                    
-                                                                                                                                                                                                                          - name: Build debug APK
-                                                                                                                                                                                                                                  working-directory: android
-                                                                                                                                                                                                                                          run: |
-                                                                                                                                                                                                                                                    chmod +x gradlew
-                                                                                                                                                                                                                                                              ./gradlew assembleDebug --no-daemon
-                                                                                                                                                                                                                                                              
-                                                                                                                                                                                                                                                                    - uses: actions/upload-artifact@v4
-                                                                                                                                                                                                                                                                            with:
-                                                                                                                                                                                                                                                                                      name: rua-home-sales-debug-apk
-                                                                                                                                                                                                                                                                                                path: android/app/build/outputs/apk/debug/app-debug.apk
-                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                            - uses: android-actions/setup-android@v3
+                                                                                                                                                                                                            
+                                                                                                                                                                                                                  - name: Accept Android SDK licenses
+                                                                                                                                                                                                                          run: yes | sdkmanager --licenses || true
+                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                - name: Build debug APK
+                                                                                                                                                                                                                                        working-directory: android-app/android
+                                                                                                                                                                                                                                                run: |
+                                                                                                                                                                                                                                                          chmod +x gradlew
+                                                                                                                                                                                                                                                                    ./gradlew assembleDebug --no-daemon
+                                                                                                                                                                                                                                                                    
+                                                                                                                                                                                                                                                                          - uses: actions/upload-artifact@v4
+                                                                                                                                                                                                                                                                                  with:
+                                                                                                                                                                                                                                                                                            name: rua-home-sales-debug-apk
+                                                                                                                                                                                                                                                                                                      path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+                                                                                                                                                                                                                                                                                                      
