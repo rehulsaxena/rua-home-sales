@@ -34,7 +34,11 @@ function showPage(name){
 }
 function refreshPrices(){
   for (const row of catalogueRows.values()) {
-    row.el.textContent = row.name + ' \u2022 ' + (row.stock === 0 ? 'Out of stock' : row.stock == null ? 'Quantity unavailable' : 'Stock: ' + row.stock);
+    row.el.textContent = row.name + ' \u2022 ';
+    const stockEl = document.createElement('b');
+    stockEl.style.color = '#b56a00';
+    stockEl.textContent = row.stock === 0 ? 'Out of stock' : row.stock == null ? 'Quantity unavailable' : 'Stock: ' + row.stock;
+    row.el.append(stockEl);
   }
 }
 function addToCart(id, qtyInput, priceInput) {
@@ -110,7 +114,11 @@ async function loadProducts() {
         addBtn.onclick = () => addToCart(p.id, qtyInput, priceInput);
         article.append(qtyInput, priceInput, addBtn);
       } else {
-        text.textContent = p.name + ' \u2022 Price unavailable \u2022 ' + (stock === 0 ? 'Out of stock' : 'Quantity unavailable');
+        text.textContent = p.name + ' \u2022 Price unavailable \u2022 ';
+        const stockEl2 = document.createElement('b');
+        stockEl2.style.color = '#b56a00';
+        stockEl2.textContent = stock === 0 ? 'Out of stock' : 'Quantity unavailable';
+        text.append(stockEl2);
       }
       $('products').append(article);
     }
