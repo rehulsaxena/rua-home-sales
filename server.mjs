@@ -79,33 +79,51 @@ function splitIndianMobile(phone) {
   throw new Error('Invalid phone number: ' + phone);
 }
 
-async function sendOtpViaInterakt(phone, code) {
-  const { INTERAKT_API_KEY, INTERAKT_WA_TEMPLATE_NAME, INTERAKT_WA_LANGUAGE_CODE } = process.env;
-  if (!INTERAKT_API_KEY || !INTERAKT_WA_TEMPLATE_NAME) {
-    throw new Error('Interakt credentials missing: set INTERAKT_API_KEY and INTERAKT_WA_TEMPLATE_NAME');
+function formatOrderSummary(order) {
+  if (!order || !Array.isArray(order.lines) || !order.lines.length) return null;
+  const itemLines = order.lines
+  .map(l => (l.name || 'Item') + ' x' + l.qty + ' - ' + '₹' + Number(l.total || 0).toFixed(2))
+  .join('\n');
+  const total = order.lines.reduce((sum, l) => sum + Number(l.total || 0), 0);
+  return { itemLines, total: '₹' + total.toFixed(2) };
+}
+
+async function sendOtpViaInterakt(phone, code, order) {
+  const { INTERAKT_API_KEY, INTERAKT_WA_TEMPLATE_NAME, INTERAKT_WA_ORDER_TEMPLATE_NAME, INTERAKT_WA_LANGUAGE_CODE } = process.env;
+  if (!INTERAKT_API_KEY) {
+    throw new Error('Interakt credentials missing: set INTERAKT_API_KEY');
   }
   const { countryCode, phoneNumber } = splitIndianMobile(phone);
+  const summary = formatOrderSummary(order);
+  let template;
+  if (summary && INTERAKT_WA_ORDER_TEMPLATE_NAME) {
+    template = {
+      name: INTERAKT_WA_ORDER_TEMPLATE_NAME,
+      languageCode: INTERAKT_WA_LANGUAGE_CODE || 'en',
+      bodyValues: [summary.itemLines, summary.total, code],
+    };
+  } else {
+    if (!INTERAKT_WA_TEMPLATE_NAME) {
+      throw new Error('Interakt credentials missing: set INTERAKT_WA_TEMPLATE_NAME');
+    }
+    template = {
+      name: INTERAKT_WA_TEMPLATE_NAME,
+      languageCode: INTERAKT_WA_LANGUAGE_CODE || 'en',
+      bodyValues: [code],
+      buttonValues: { '0': [code] },
+    };
+  }
   const response = await fetch('https://api.interakt.ai/v1/public/message/', {
     method: 'POST',
     headers: { Authorization: 'Basic ' + INTERAKT_API_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      countryCode,
-      phoneNumber,
-      type: 'Template',
-      template: {
-        name: INTERAKT_WA_TEMPLATE_NAME,
-        languageCode: INTERAKT_WA_LANGUAGE_CODE || 'en',
-        bodyValues: [code],
-        buttonValues: { '0': [code] },
-      },
-    }),
+    body: JSON.stringify({ countryCode, phoneNumber, type: 'Template', template }),
     signal: AbortSignal.timeout(10000),
   });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error('Interakt send failed: ' + (result.message || ('HTTP ' + response.status)));
   }
-  return { sent: true, provider: 'interakt-whatsapp' };
+  return { sent: true, provider: summary && INTERAKT_WA_ORDER_TEMPLATE_NAME ? 'interakt-whatsapp-order' : 'interakt-whatsapp' };
 }
 
 async function sendOtpViaMsg91(phone, code) {
@@ -132,7 +150,7 @@ async function sendOtpViaMsg91(phone, code) {
   return { sent: true, provider: 'msg91' };
 }
 
-async function sendOtp(phone) {
+async function sendOtp(phone, order) {
   const code = String(100000 + Math.floor(Math.random() * 900000));
   otpStore.set(phone, { code, expires: Date.now() + 300000 });
   const provider = process.env.OTP_PROVIDER;
@@ -144,7 +162,7 @@ async function sendOtp(phone) {
     return sendOtpViaMsg91(phone, code);
   }
   if (provider === 'interakt') {
-    return sendOtpViaInterakt(phone, code);
+    return sendOtpViaInterakt(phone, code, order);
   }
   throw new Error('Unsupported OTP_PROVIDER: ' + provider);
 }
@@ -243,7 +261,8 @@ export function createApp(requestPage = bridgeRequest, password = process.env.RU
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(staffDirectory()));
       } else if (req.method === 'POST' && req.url === '/api/otp/send') {
         const body = await readJsonBody(req);
-        const result = await sendOtp(String(body.phone || ''));
+        const order = Array.isArray(body.lines) ? { lines: body.lines } : null;
+        const result = await sendOtp(String(body.phone || ''), order);
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
       } else if (req.method === 'POST' && req.url === '/api/otp/verify') {
         const body = await readJsonBody(req);
