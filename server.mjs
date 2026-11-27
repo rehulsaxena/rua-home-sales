@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-export async function loadCatalogue(requestPage) {
+export async function loadCatalogue(requestPage, requestWcPage = bridgeWcRequest) {
   async function readPages(path) {
     const items = [];
     for (let page = 1; page <= 100; page++) {
@@ -18,17 +18,19 @@ export async function loadCatalogue(requestPage) {
     throw new Error('Catalogue exceeded pagination limit');
   }
 
+const categoryMap = await loadWcCategoryMap(requestWcPage);
+
 const products = [];
   for (const product of await readPages('products')) {
-    if (product.type === 'simple') products.push(product);
+    if (product.type === 'simple') products.push({ ...product, categories: categoryMap.get(product.id) ?? product.categories });
     if (product.type !== 'variable') continue;
     for (const variation of await readPages('products/' + product.id + '/variations')) {
       const inheritsStock = !variation.managing_stock && product.managing_stock;
       products.push({
         ...variation,
         parent_id: product.id,
-        categories: product.categories,
-        name: product.name + ' — ' + Object.values(variation.attributes ?? {}).filter(Boolean).join(' / '),
+        categories: categoryMap.get(product.id) ?? product.categories,
+        name: product.name + ' \u2014 ' + Object.values(variation.attributes ?? {}).filter(Boolean).join(' / '),
         stock_quantity: inheritsStock ? product.stock_quantity : variation.stock_quantity,
         stock_status: inheritsStock ? product.stock_status : variation.stock_status,
         stock_pool: inheritsStock ? product.id : variation.id,
@@ -36,6 +38,35 @@ const products = [];
     }
   }
   return products;
+}
+
+async function loadWcCategoryMap(requestWcPage) {
+  const map = new Map();
+  try {
+    for (let page = 1; page <= 100; page++) {
+      const items = await requestWcPage(page);
+      if (!Array.isArray(items) || items.length === 0) break;
+      for (const p of items) map.set(p.id, p.categories ?? []);
+      if (items.length < 50) break;
+    }
+  } catch (err) {
+    console.error('Could not load WooCommerce categories (falling back to no categories):', err.message);
+  }
+  return map;
+}
+
+function bridgeWcRequest(page) {
+  const { RUA_WP_USER, RUA_WP_APP_PASSWORD } = process.env;
+  if (!RUA_WP_USER || !RUA_WP_APP_PASSWORD) throw new Error('Catalogue credentials missing');
+  const auth = Buffer.from(RUA_WP_USER + ':' + RUA_WP_APP_PASSWORD).toString('base64');
+  return fetch('https://ruahome.in/wp-json/wc/v3/products?per_page=50&page=' + page + '&_fields=id,categories', {
+    headers: { Authorization: 'Basic ' + auth },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10000),
+  }).then(response => {
+    if (!response.ok) throw new Error('WooCommerce categories unavailable: HTTP ' + response.status + ' ' + response.statusText);
+    return response.json();
+  });
 }
 
 function bridgeRequest(path, page) {
@@ -78,10 +109,10 @@ function splitIndianMobile(phone) {
 function formatOrderSummary(order) {
   if (!order || !Array.isArray(order.lines) || !order.lines.length) return null;
   const itemLines = order.lines
-  .map(l => (l.name || 'Item') + ' x' + l.qty + ' - ' + '₹' + Number(l.total || 0).toFixed(2))
+  .map(l => (l.name || 'Item') + ' x' + l.qty + ' - ' + '\u20B9' + Number(l.total || 0).toFixed(2))
   .join('\n');
   const total = order.lines.reduce((sum, l) => sum + Number(l.total || 0), 0);
-  return { itemLines, total: '₹' + total.toFixed(2) };
+  return { itemLines, total: '\u20B9' + total.toFixed(2) };
 }
 
 async function sendOtpViaInterakt(phone, code, order) {
@@ -228,7 +259,7 @@ function readJsonBody(req) {
   });
 }
 
-export function createApp(requestPage = bridgeRequest) {
+export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcRequest) {
   return createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -242,7 +273,7 @@ export function createApp(requestPage = bridgeRequest) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(await readFile(new URL('./index.html', import.meta.url)));
       } else if (req.method === 'GET' && req.url === '/api/catalogue') {
-        const products = await loadCatalogue(requestPage);
+        const products = await loadCatalogue(requestPage, requestWcPage);
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(products));
       } else if (req.method === 'GET' && req.url === '/api/staff') {
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(staffDirectory()));
