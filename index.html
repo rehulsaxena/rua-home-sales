@@ -8,11 +8,11 @@
 <label>Shop name</label><input id="shopName" placeholder="Shop name">
 <label>Address</label><textarea id="shopAddress" rows="2" placeholder="Shop address"></textarea>
 <label>Secondary mobile number (optional)</label><input id="shopPhone2" inputmode="numeric" placeholder="10-digit mobile">
-<label>PAN card photo (required)</label><input id="shopPan" type="file" accept="image/*" capture="environment">
+<label>PAN card photo (optional)</label><input id="shopPan" type="file" accept="image/*" capture="environment">
 <p id="shopPanStatus" role="status"></p>
-<label>Aadhaar card photo (required if no GST number)</label><input id="shopAadhaar" type="file" accept="image/*" capture="environment">
+<label>Aadhaar card photo (optional)</label><input id="shopAadhaar" type="file" accept="image/*" capture="environment">
 <p id="shopAadhaarStatus" role="status"></p>
-<label>GST number (required if no Aadhaar photo)</label><input id="shopGst" placeholder="GSTIN">
+<label>GST number (optional)</label><input id="shopGst" placeholder="GSTIN">
 <button id="shopContinue" type="button">Continue to catalogue</button>
 <p id="shopStatus" role="status"></p>
 <button id="shopBack" type="button" class="linkbtn">Log out</button>
@@ -229,6 +229,7 @@ loadProducts();
     }
   }
   $('shopPhone').onchange = lookupShop;
+  $('shopPhone').oninput = () => { if ($('shopPhone').value.replace(/\D/g, '').length === 10) lookupShop(); };
 
   function resizeImageToDataUrl(file, maxDim, quality) {
     return new Promise((resolve, reject) => {
@@ -252,10 +253,6 @@ loadProducts();
     if (digits.length !== 10) return alert('Enter a valid 10-digit primary mobile number');
     if (!$('shopName').value.trim()) return alert('Enter the shop name');
     if (!$('shopAddress').value.trim()) return alert('Enter the shop address');
-    const hasPan = $('shopPan').files[0] || (existingShop && existingShop.panUrl);
-    if (!hasPan) return alert('Upload the PAN card photo');
-    const hasAadhaarOrGst = $('shopAadhaar').files[0] || $('shopGst').value.trim() || (existingShop && (existingShop.aadhaarUrl || existingShop.gst));
-    if (!hasAadhaarOrGst) return alert('Upload the Aadhaar card photo or enter a GST number');
     $('shopStatus').textContent = 'Saving shop details\u2026';
     $('shopStatus').className = '';
     $('shopContinue').disabled = true;
