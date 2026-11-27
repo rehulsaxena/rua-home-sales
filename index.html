@@ -52,7 +52,13 @@ loadProducts();
   staffLoginStatus.setAttribute('role', 'status');
   staffLoginStatus.id = 'staffLoginStatus';
   staffLoginStatus.style.margin = '10px 0';
-  $('staff').after(staffPassword, staffLoginBtn, staffLoginStatus);
+  const staffLogoutBtn = document.createElement('button');
+  staffLogoutBtn.type = 'button';
+  staffLogoutBtn.textContent = 'Log out';
+  staffLogoutBtn.id = 'staffLogoutBtn';
+  staffLogoutBtn.hidden = true;
+  staffLogoutBtn.style.background = '#a54a00';
+  $('staff').after(staffPassword, staffLoginBtn, staffLoginStatus, staffLogoutBtn);
 
   async function loadStaff() {
     try {
@@ -83,6 +89,21 @@ loadProducts();
     staffPassword.disabled = true;
     staffLoginBtn.disabled = true;
     staffLoginBtn.textContent = 'Logged in';
+    staffLoginBtn.hidden = true;
+    staffLogoutBtn.hidden = false;
+  };
+
+  staffLogoutBtn.onclick = () => {
+    loggedInStaff = null;
+    staffPassword.value = '';
+    staffLoginStatus.textContent = 'Logged out';
+    staffLoginStatus.className = '';
+    $('staff').disabled = false;
+    staffPassword.disabled = false;
+    staffLoginBtn.disabled = false;
+    staffLoginBtn.textContent = 'Log in';
+    staffLoginBtn.hidden = false;
+    staffLogoutBtn.hidden = true;
   };
   
 $('search').oninput = () => {
