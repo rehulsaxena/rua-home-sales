@@ -88,7 +88,8 @@ export function createApp(requestPage = bridgeRequest, password = process.env.RU
       } else {
         res.writeHead(404).end();
       }
-    } catch {
+    } catch(err)  {
+      console.error('Catalogue error:', err);
       if (res.headersSent) res.end();
       else res.writeHead(503, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Catalogue unavailable' }));
