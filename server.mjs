@@ -57,8 +57,8 @@ function hash(value) {
 }
 
 export function createApp(requestPage = bridgeRequest, password = process.env.RUA_PILOT_PASSWORD) {
-  if (!password || password.length < 24) {
-    throw new Error('Set RUA_PILOT_PASSWORD to a random password of at least 24 characters');
+  if (!password || password.length < 12) {
+    throw new Error('Set RUA_PILOT_PASSWORD to a random password of at least 12 characters');
   }
   const expected = hash('Basic ' + Buffer.from('pilot:' + password).toString('base64'));
   return createServer(async (req, res) => {
