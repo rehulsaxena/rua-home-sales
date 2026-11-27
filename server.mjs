@@ -72,6 +72,42 @@ function normalizeIndianMobile(phone) {
   throw new Error('Invalid phone number: ' + phone);
 }
 
+function splitIndianMobile(phone) {
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 10) return { countryCode: '+91', phoneNumber: digits };
+  if (digits.length === 12 && digits.startsWith('91')) return { countryCode: '+91', phoneNumber: digits.slice(2) };
+  throw new Error('Invalid phone number: ' + phone);
+}
+
+async function sendOtpViaInterakt(phone, code) {
+  const { INTERAKT_API_KEY, INTERAKT_WA_TEMPLATE_NAME, INTERAKT_WA_LANGUAGE_CODE } = process.env;
+  if (!INTERAKT_API_KEY || !INTERAKT_WA_TEMPLATE_NAME) {
+    throw new Error('Interakt credentials missing: set INTERAKT_API_KEY and INTERAKT_WA_TEMPLATE_NAME');
+  }
+  const { countryCode, phoneNumber } = splitIndianMobile(phone);
+  const response = await fetch('https://api.interakt.ai/v1/public/message/', {
+    method: 'POST',
+    headers: { Authorization: 'Basic ' + INTERAKT_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      countryCode,
+      phoneNumber,
+      type: 'Template',
+      template: {
+        name: INTERAKT_WA_TEMPLATE_NAME,
+        languageCode: INTERAKT_WA_LANGUAGE_CODE || 'en',
+        bodyValues: [code],
+        buttonValues: { '0': [code] },
+      },
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error('Interakt send failed: ' + (result.message || ('HTTP ' + response.status)));
+  }
+  return { sent: true, provider: 'interakt-whatsapp' };
+}
+
 async function sendOtpViaMsg91(phone, code) {
   const { MSG91_AUTH_KEY, MSG91_TEMPLATE_ID, MSG91_OTP_VAR_NAME } = process.env;
   if (!MSG91_AUTH_KEY || !MSG91_TEMPLATE_ID) {
@@ -106,6 +142,9 @@ async function sendOtp(phone) {
   }
   if (provider === 'msg91') {
     return sendOtpViaMsg91(phone, code);
+  }
+  if (provider === 'interakt') {
+    return sendOtpViaInterakt(phone, code);
   }
   throw new Error('Unsupported OTP_PROVIDER: ' + provider);
 }
