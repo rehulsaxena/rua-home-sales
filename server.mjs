@@ -47,7 +47,7 @@ function bridgeRequest(path, page) {
     redirect: 'error',
     signal: AbortSignal.timeout(10000),
   }).then(response => {
-    if (!response.ok) throw new Error('Catalogue unavailable');
+      if (!response.ok) throw new Error('Catalogue unavailable: HTTP ' + response.status + ' ' + response.statusText);   
     return response.json();
   });
 }
