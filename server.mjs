@@ -18,7 +18,7 @@ export async function loadCatalogue(requestPage) {
     throw new Error('Catalogue exceeded pagination limit');
   }
 
-  const products = [];
+const products = [];
   for (const product of await readPages('products')) {
     if (product.type === 'simple') products.push(product);
     if (product.type !== 'variable') continue;
@@ -48,7 +48,7 @@ function bridgeRequest(path, page) {
     redirect: 'error',
     signal: AbortSignal.timeout(10000),
   }).then(response => {
-      if (!response.ok) throw new Error('Catalogue unavailable: HTTP ' + response.status + ' ' + response.statusText);   
+    if (!response.ok) throw new Error('Catalogue unavailable: HTTP ' + response.status + ' ' + response.statusText);
     return response.json();
   });
 }
@@ -65,14 +65,49 @@ function staffDirectory() {
 
 const otpStore = new Map();
 
+function normalizeIndianMobile(phone) {
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 10) return '91' + digits;
+  if (digits.length === 12 && digits.startsWith('91')) return digits;
+  throw new Error('Invalid phone number: ' + phone);
+}
+
+async function sendOtpViaMsg91(phone, code) {
+  const { MSG91_AUTH_KEY, MSG91_TEMPLATE_ID, MSG91_OTP_VAR_NAME } = process.env;
+  if (!MSG91_AUTH_KEY || !MSG91_TEMPLATE_ID) {
+    throw new Error('MSG91 credentials missing: set MSG91_AUTH_KEY and MSG91_TEMPLATE_ID');
+  }
+  const varName = MSG91_OTP_VAR_NAME || 'OTP';
+  const mobile = normalizeIndianMobile(phone);
+  const response = await fetch('https://control.msg91.com/api/v5/flow', {
+    method: 'POST',
+    headers: { authkey: MSG91_AUTH_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      template_id: MSG91_TEMPLATE_ID,
+      short_url: '0',
+      recipients: [{ mobiles: mobile, [varName]: code }],
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.type === 'error') {
+    throw new Error('MSG91 send failed: ' + (result.message || ('HTTP ' + response.status)));
+  }
+  return { sent: true, provider: 'msg91' };
+}
+
 async function sendOtp(phone) {
   const code = String(100000 + Math.floor(Math.random() * 900000));
   otpStore.set(phone, { code, expires: Date.now() + 300000 });
-  if (!process.env.OTP_PROVIDER || process.env.OTP_PROVIDER === 'console') {
+  const provider = process.env.OTP_PROVIDER;
+  if (!provider || provider === 'console') {
     console.error('SIMULATED OTP for', phone, ':', code);
     return { simulated: true };
   }
-  throw new Error('Unsupported OTP_PROVIDER: ' + process.env.OTP_PROVIDER);
+  if (provider === 'msg91') {
+    return sendOtpViaMsg91(phone, code);
+  }
+  throw new Error('Unsupported OTP_PROVIDER: ' + provider);
 }
 
 function verifyOtp(phone, code) {
@@ -155,7 +190,7 @@ export function createApp(requestPage = bridgeRequest, password = process.env.RU
     }
     if (!timingSafeEqual(hash(req.headers.authorization ?? ''), expected)) {
       res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="RUA HOME Sales Pilot", charset="UTF-8"' })
-        .end('Authentication required');
+      .end('Authentication required');
       return;
     }
     try {
@@ -193,11 +228,11 @@ export function createApp(requestPage = bridgeRequest, password = process.env.RU
         res.writeHead(404).end();
       }
     }
-    catch(err)  {
+    catch(err) {
       console.error('Catalogue error:', err);
       if (res.headersSent) res.end();
       else res.writeHead(503, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify({ error: 'Catalogue unavailable' }));
+      .end(JSON.stringify({ error: 'Catalogue unavailable' }));
     }
   });
 }
