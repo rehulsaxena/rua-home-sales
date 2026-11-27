@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
@@ -51,10 +51,6 @@ function bridgeRequest(path, page) {
     if (!response.ok) throw new Error('Catalogue unavailable: HTTP ' + response.status + ' ' + response.statusText);
     return response.json();
   });
-}
-
-function hash(value) {
-  return createHash('sha256').update(value).digest();
 }
 
 function staffDirectory() {
@@ -232,22 +228,13 @@ function readJsonBody(req) {
   });
 }
 
-export function createApp(requestPage = bridgeRequest, password = process.env.RUA_PILOT_PASSWORD) {
-  if (!password || password.length < 12) {
-    throw new Error('Set RUA_PILOT_PASSWORD to a random password of at least 12 characters');
-  }
-  const expected = hash('Basic ' + Buffer.from('pilot:' + password).toString('base64'));
+export function createApp(requestPage = bridgeRequest) {
   return createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     if (req.method === 'GET' && req.url === '/healthz') {
       res.writeHead(200, { 'Content-Type': 'text/plain' }).end('OK');
-      return;
-    }
-    if (!timingSafeEqual(hash(req.headers.authorization ?? ''), expected)) {
-      res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="RUA HOME Sales Pilot", charset="UTF-8"' })
-      .end('Authentication required');
       return;
     }
     try {
