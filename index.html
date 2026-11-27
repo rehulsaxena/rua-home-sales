@@ -1,5 +1,13 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#f4f5f7;color:#17252a;margin:0}header{background:#153d39;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px}label{display:block;margin:12px 0 4px}input,select,button{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#153d39;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#a54a00;font-weight:bold} .ok{color:#146c2e;font-weight:bold}article{padding:10px 0;border-bottom:1px solid #ddd}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main><section><b>Demo only — no live OTP or customer data</b><p>Use fictional customer information. Catalogue supplied by ruahome.in. Storefront prices are references. Wholesale rates and OTP are simulated.</p><label>Sales executive</label><select id="staff"></select><label>Retail shop</label><input id="shop" placeholder="Demo shop"><label>Owner mobile</label><input id="phone" inputmode="numeric" placeholder="10-digit demo number"><label>Customer pricing tier</label><select id="tier"><option value="0">Standard</option><option value="10">Preferred (₹10 off per unit)</option></select></section><section><b>Product catalogue</b><label for="categoryFilter">Category</label><select id="categoryFilter"><option value="">All categories</option></select><label for="search">Find a product</label><input id="search" type="search" placeholder="Search name or SKU"><p id="catalogueStatus" role="status"></p><div id="products"></div></section><section><b>Order summary</b><div id="cart"></div><p id="total"></p><button id="send">Generate demo OTP</button><div id="otpArea" hidden><p id="hint"></p><input id="otp" inputmode="numeric" placeholder="Enter demo OTP"><button id="confirm">Confirm demo order</button></div><p id="status" role="status"></p></section><section><b>Confirmed orders (this session)</b><div id="orders"></div></section></main><script>
-const $=id=>document.getElementById(id), products=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null;const money=n=>'₹'+n.toFixed(2);function addToCart(id, qtyInput) {
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#f4f5f7;color:#17252a;margin:0}header{background:#153d39;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px}label{display:block;margin:12px 0 4px}input,select,button{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#153d39;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#a54a00;font-weight:bold} .ok{color:#146c2e;font-weight:bold}article{padding:10px 0;border-bottom:1px solid #ddd}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main><section><b>Demo only â no live OTP or customer data</b><p>Use fictional customer information. Catalogue supplied by ruahome.in. Storefront prices are references. Wholesale rates and OTP are simulated.</p><label>Sales executive</label><select id="staff"></select><label>Retail shop</label><input id="shop" placeholder="Demo shop"><label>Owner mobile</label><input id="phone" inputmode="numeric" placeholder="10-digit demo number"><label>Customer pricing tier</label><select id="tier"><option value="0">Standard</option><option value="10">Preferred (â¹10 off per unit)</option></select></section><section><b>Product catalogue</b><label for="categoryFilter">Category</label><select id="categoryFilter"><option value="">All categories</option></select><label for="search">Find a product</label><input id="search" type="search" placeholder="Search name or SKU"><p id="catalogueStatus" role="status"></p><div id="products"></div></section><section><b>Order summary</b><div id="cart"></div><p id="total"></p><button id="send">Generate demo OTP</button><div id="otpArea" hidden><p id="hint"></p><input id="otp" inputmode="numeric" placeholder="Enter demo OTP"><button id="confirm">Confirm demo order</button></div><p id="status" role="status"></p></section><section><b>Confirmed orders (this session)</b><div id="orders"></div></section></main><script>
+const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null;const money=n=>'â¹'+n.toFixed(2);function tierDiscount(){return Number($('tier').value)||0;}
+function refreshPrices(){
+  for (const row of catalogueRows.values()) {
+    const net = Math.max(0, row.price - tierDiscount());
+    row.el.textContent = row.name + ' â¢ Price ' + money(net) +
+      ' â¢ ' + (row.stock === 0 ? 'Out of stock' : row.stock == null ? 'Quantity unavailable' : 'Stock: ' + row.stock);
+  }
+}
+function addToCart(id, qtyInput) {
   const qty = Number(qtyInput.value);
   if (!products.has(id) || !Number.isSafeInteger(qty) || qty < 1 || qty > 100000) return alert('Enter a valid quantity');
   const existing = cart.find(c => c.id === id);
@@ -20,7 +28,7 @@ function filterProducts() {
 
 async function loadProducts() {
   const status = $('catalogueStatus');
-  status.textContent = 'Loading the storefront catalogue…';
+  status.textContent = 'Loading the storefront catalogueâ¦';
   let items, offline = false;
   try {
     const response = await fetch('/api/catalogue');
@@ -47,12 +55,10 @@ async function loadProducts() {
       const text = document.createElement('span');
       text.style.cssText = 'flex:1;min-width:160px';
       const available = price != null && Number.isFinite(price) && price >= 0 && stock !== 0;
-      text.textContent = p.name + ' • SKU ' + (p.sku || '—') +
-        ' • Website price ' + (price == null ? 'unavailable' : money(price)) +
-        ' • ' + (stock === 0 ? 'Out of stock' : stock == null ? 'Quantity unavailable' : 'Stock: ' + stock);
       article.append(text);
       if (available) {
         products.set(p.id, { ...p, price, stock });
+        catalogueRows.set(p.id, { name: p.name, price, stock, el: text });
         const qtyInput = document.createElement('input');
         qtyInput.type = 'number';
         qtyInput.min = '1';
@@ -64,9 +70,12 @@ async function loadProducts() {
         addBtn.style.cssText = 'width:auto;margin-top:0;flex:none';
         addBtn.onclick = () => addToCart(p.id, qtyInput);
         article.append(qtyInput, addBtn);
+      } else {
+        text.textContent = p.name + ' â¢ Price unavailable â¢ ' + (stock === 0 ? 'Out of stock' : 'Quantity unavailable');
       }
       $('products').append(article);
     }
+    refreshPrices();
     for (const [value, label] of [...categories].sort((a, b) => a[1].localeCompare(b[1]))) {
       $('categoryFilter').add(new Option(label, value));
     }
@@ -117,12 +126,12 @@ loadProducts();
     const staff = staffList.find(s => s.id === Number($('staff').value));
     if (!staff) { staffLoginStatus.textContent = 'No staff selected'; staffLoginStatus.className = 'warn'; return; }
     if (!staffPassword.value) { staffLoginStatus.textContent = 'Enter the staff password'; staffLoginStatus.className = 'warn'; return; }
-    staffLoginStatus.textContent = 'Checking…';
+    staffLoginStatus.textContent = 'Checkingâ¦';
     staffLoginStatus.className = '';
     const pwHash = await sha256hex(staffPassword.value);
-    if (pwHash !== staff.passwordHash) { staffLoginStatus.textContent = '✗ Incorrect password'; staffLoginStatus.className = 'warn'; return; }
+    if (pwHash !== staff.passwordHash) { staffLoginStatus.textContent = 'â Incorrect password'; staffLoginStatus.className = 'warn'; return; }
     loggedInStaff = staff;
-    staffLoginStatus.textContent = '✓ Logged in as ' + staff.name;
+    staffLoginStatus.textContent = 'â Logged in as ' + staff.name;
     staffLoginStatus.className = 'ok';
     $('staff').disabled = true;
     staffPassword.disabled = true;
@@ -149,8 +158,8 @@ $('search').oninput = filterProducts;
 $('categoryFilter').onchange = filterProducts;
 function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textContent='';}
   function lines(){return cart.map(c=>{let p=products.get(c.id),rate=Math.max(0,Math.round(p.price*100)-Number($('tier').value)*100-(c.qty>=24?1500:0));return {...c,name:p.name,rate:rate/100,stock:p.stock,pool:p.stock_pool??p.id,parentId:p.parent_id??null,total:rate*c.qty/100}})}
-  function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' × '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.id!==l.id);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))}
-  $('tier').onchange=render;
+  function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' Ã '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.id!==l.id);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))}
+  $('tier').onchange=()=>{refreshPrices();render();};
   for(const id of ['shop','phone'])$(id).oninput=invalidate;
 
   function queueOfflineOrder(order){
