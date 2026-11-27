@@ -1,0 +1,14 @@
+{
+    "name": "rua-home-sales-android",
+    "version": "1.0.0",
+    "description": "Android app shell for RUA HOME Sales (wraps the live Render-hosted app)",
+    "private": true,
+    "scripts": {
+          "build-android": "cap add android && cap sync android"
+    },
+    "dependencies": {
+          "@capacitor/android": "^8.6.3",
+          "@capacitor/cli": "^8.6.3",
+          "@capacitor/core": "^8.6.3"
+    }
+}
