@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export async function loadCatalogue(requestPage) {
@@ -57,6 +57,52 @@ function hash(value) {
   return createHash('sha256').update(value).digest();
 }
 
+function staffDirectory() {
+  let raw;
+  try { raw = JSON.parse(process.env.RUA_STAFF || '[]'); } catch { raw = []; }
+  return raw.map(s => ({ id: s.id, name: s.name, passwordHash: createHash('sha256').update(String(s.password)).digest('hex') }));
+}
+
+const otpStore = new Map();
+
+async function sendOtp(phone) {
+  const code = String(100000 + Math.floor(Math.random() * 900000));
+  otpStore.set(phone, { code, expires: Date.now() + 300000 });
+  if (!process.env.OTP_PROVIDER || process.env.OTP_PROVIDER === 'console') {
+    console.error('SIMULATED OTP for', phone, ':', code);
+    return { simulated: true };
+  }
+  throw new Error('Unsupported OTP_PROVIDER: ' + process.env.OTP_PROVIDER);
+}
+
+function verifyOtp(phone, code) {
+  const entry = otpStore.get(phone);
+  if (!entry || Date.now() > entry.expires) return false;
+  const ok = entry.code === String(code);
+  if (ok) otpStore.delete(phone);
+  return ok;
+}
+
+async function readOrders() {
+  try { return JSON.parse(await readFile(new URL('./orders.json', import.meta.url), 'utf8')); } catch { return []; }
+}
+
+async function writeOrder(order) {
+  const orders = await readOrders();
+  orders.push(order);
+  await writeFile(new URL('./orders.json', import.meta.url), JSON.stringify(orders, null, 2));
+  return orders.length;
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', chunk => { data += chunk; if (data.length > 1e6) req.destroy(); });
+    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+    req.on('error', reject);
+  });
+}
+
 export function createApp(requestPage = bridgeRequest, password = process.env.RUA_PILOT_PASSWORD) {
   if (!password || password.length < 12) {
     throw new Error('Set RUA_PILOT_PASSWORD to a random password of at least 12 characters');
@@ -75,21 +121,33 @@ export function createApp(requestPage = bridgeRequest, password = process.env.RU
         .end('Authentication required');
       return;
     }
-    if (req.method !== 'GET') {
-      res.writeHead(405, { Allow: 'GET' }).end();
-      return;
-    }
     try {
-      if (req.url === '/') {
+      if (req.method === 'GET' && req.url === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(await readFile(new URL('./index.html', import.meta.url)));
-      } else if (req.url === '/api/catalogue') {
+      } else if (req.method === 'GET' && req.url === '/api/catalogue') {
         const products = await loadCatalogue(requestPage);
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(products));
+      } else if (req.method === 'GET' && req.url === '/api/staff') {
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(staffDirectory()));
+      } else if (req.method === 'POST' && req.url === '/api/otp/send') {
+        const body = await readJsonBody(req);
+        const result = await sendOtp(String(body.phone || ''));
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(result));
+      } else if (req.method === 'POST' && req.url === '/api/otp/verify') {
+        const body = await readJsonBody(req);
+        const ok = verifyOtp(String(body.phone || ''), String(body.code || ''));
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok }));
+      } else if (req.method === 'POST' && req.url === '/api/orders') {
+        const body = await readJsonBody(req);
+        const order = { ...body, receivedAt: new Date().toISOString() };
+        const count = await writeOrder(order);
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok: true, orderNumber: 'RH-' + count }));
       } else {
         res.writeHead(404).end();
       }
-    } catch(err)  {
+    }
+    catch(err)  {
       console.error('Catalogue error:', err);
       if (res.headersSent) res.end();
       else res.writeHead(503, { 'Content-Type': 'application/json' })
