@@ -238,10 +238,10 @@ function customerToShop(customer) {
     name: customer.first_name || '',
     address: customer.billing?.address_1 || '',
     phone: customer.billing?.phone || '',
-    secondaryPhone: metaValue(customer, '_rua_secondary_phone'),
-    gst: metaValue(customer, '_rua_gst_number'),
-    panUrl: metaValue(customer, '_rua_pan_url'),
-    aadhaarUrl: metaValue(customer, '_rua_aadhaar_url'),
+    secondaryPhone: metaValue(customer, 'rua_secondary_phone'),
+    gst: metaValue(customer, 'rua_gst_number'),
+    panUrl: metaValue(customer, 'rua_pan_url'),
+    aadhaarUrl: metaValue(customer, 'rua_aadhaar_url'),
   };
 }
 
@@ -300,10 +300,10 @@ async function upsertShop(shop) {
     first_name: shop.name,
     billing: { first_name: shop.name, phone: digits, address_1: shop.address },
     meta_data: [
-      { key: '_rua_secondary_phone', value: shop.secondaryPhone || '' },
-      { key: '_rua_gst_number', value: shop.gst || '' },
-      { key: '_rua_pan_url', value: shop.panUrl || '' },
-      { key: '_rua_aadhaar_url', value: shop.aadhaarUrl || '' },
+      { key: 'rua_secondary_phone', value: shop.secondaryPhone || '' },
+      { key: 'rua_gst_number', value: shop.gst || '' },
+      { key: 'rua_pan_url', value: shop.panUrl || '' },
+      { key: 'rua_aadhaar_url', value: shop.aadhaarUrl || '' },
     ],
   };
   const auth = wcAuthHeader();
