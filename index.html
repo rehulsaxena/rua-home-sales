@@ -90,7 +90,7 @@ $('search').oninput = () => {
   $('add').disabled = !firstMatch;
 };
 function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textContent='';}
-  function lines(){return cart.map(c=>{let p=products.get(c.id),rate=Math.max(0,Math.round(p.price*100)-Number($('tier').value)*100-(c.qty>=24?1500:0));return {...c,name:p.name,rate:rate/100,stock:p.stock,pool:p.stock_pool??p.id,total:rate*c.qty/100}})}
+  function lines(){return cart.map(c=>{let p=products.get(c.id),rate=Math.max(0,Math.round(p.price*100)-Number($('tier').value)*100-(c.qty>=24?1500:0));return {...c,name:p.name,rate:rate/100,stock:p.stock,pool:p.stock_pool??p.id,parentId:p.parent_id??null,total:rate*c.qty/100}})}
   function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' × '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.id!==l.id);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))}
   $('add').onclick=()=>{let id=Number($('product').value),qty=Number($('qty').value);if(!products.has(id)||!Number.isSafeInteger(qty)||qty<1||qty>100000)return alert('Enter a valid quantity');let c=cart.find(c=>c.id===id);if(c)c.qty+=qty;else cart.push({id,qty});render()};
   $('tier').onchange=render;
@@ -178,7 +178,7 @@ function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textCont
       $('orders').prepend(a);
       cart = [];
       render();
-      $('status').textContent = 'Order confirmed';
+$('status').textContent = 'Order confirmed' + (savedOrder.warning ? ' (' + savedOrder.warning + ')' : '');
     } catch {
       $('status').textContent = 'Could not reach the server to confirm. Try again once connected.';
     }
