@@ -213,6 +213,129 @@ async function writeOrder(order) {
   return orders.length;
 }
 
+function wcAuthHeader() {
+  const { RUA_WP_USER, RUA_WP_APP_PASSWORD } = process.env;
+  if (!RUA_WP_USER || !RUA_WP_APP_PASSWORD) throw new Error('WooCommerce credentials missing');
+  return 'Basic ' + Buffer.from(RUA_WP_USER + ':' + RUA_WP_APP_PASSWORD).toString('base64');
+}
+
+function shopUsername(digits) {
+  return 'rua_' + digits;
+}
+
+function shopEmail(digits) {
+  return 'rua.' + digits + '@shop.ruahome.in';
+}
+
+function metaValue(customer, key) {
+  const entry = (customer.meta_data || []).find(m => m.key === key);
+  return entry ? entry.value : '';
+}
+
+function customerToShop(customer) {
+  return {
+    customerId: customer.id,
+    name: customer.first_name || '',
+    address: customer.billing?.address_1 || '',
+    phone: customer.billing?.phone || '',
+    secondaryPhone: metaValue(customer, '_rua_secondary_phone'),
+    gst: metaValue(customer, '_rua_gst_number'),
+    panUrl: metaValue(customer, '_rua_pan_url'),
+    aadhaarUrl: metaValue(customer, '_rua_aadhaar_url'),
+  };
+}
+
+async function findShopByPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length !== 10) return null;
+  const response = await fetch('https://ruahome.in/wp-json/wc/v3/customers?search=' + encodeURIComponent(shopUsername(digits)) + '&per_page=5', {
+    headers: { Authorization: wcAuthHeader() },
+    redirect: 'error',
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error('Shop lookup failed: HTTP ' + response.status);
+  const customers = await response.json();
+  const match = customers.find(c => c.username === shopUsername(digits));
+  return match ? customerToShop(match) : null;
+}
+
+async function uploadShopPhoto(dataUrl, filenamePrefix) {
+  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/.exec(dataUrl || '');
+  if (!match) throw new Error('Invalid photo data');
+  const mimeType = match[1];
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > 6 * 1024 * 1024) throw new Error('Photo is too large');
+  const ext = (mimeType.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const form = new FormData();
+  form.append('file', new Blob([buffer], { type: mimeType }), filenamePrefix + '-' + Date.now() + '.' + ext);
+  const response = await fetch('https://ruahome.in/wp-json/wp/v2/media', {
+    method: 'POST',
+    headers: { Authorization: wcAuthHeader() },
+    body: form,
+    redirect: 'error',
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error('Photo upload failed: HTTP ' + response.status + ' ' + text.slice(0, 300));
+  }
+  const media = await response.json();
+  return media.source_url;
+}
+
+function badRequest(message) {
+  const err = new Error(message);
+  err.statusCode = 400;
+  return err;
+}
+
+async function upsertShop(shop) {
+  const digits = String(shop.phone || '').replace(/\D/g, '');
+  if (digits.length !== 10) throw badRequest('Enter a valid 10-digit primary phone number');
+  if (!shop.name || !shop.name.trim()) throw badRequest('Shop name is required');
+  if (!shop.address || !shop.address.trim()) throw badRequest('Shop address is required');
+  if (!shop.panUrl) throw badRequest('PAN card photo is required');
+  if (!shop.gst && !shop.aadhaarUrl) throw badRequest('Aadhaar card photo or GST number is required');
+
+  const existing = await findShopByPhone(digits).catch(() => null);
+  const payload = {
+    first_name: shop.name,
+    billing: { first_name: shop.name, phone: digits, address_1: shop.address },
+    meta_data: [
+      { key: '_rua_secondary_phone', value: shop.secondaryPhone || '' },
+      { key: '_rua_gst_number', value: shop.gst || '' },
+      { key: '_rua_pan_url', value: shop.panUrl || '' },
+      { key: '_rua_aadhaar_url', value: shop.aadhaarUrl || '' },
+    ],
+  };
+  const auth = wcAuthHeader();
+  const response = existing
+    ? await fetch('https://ruahome.in/wp-json/wc/v3/customers/' + existing.customerId, {
+        method: 'PUT',
+        headers: { Authorization: auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      })
+    : await fetch('https://ruahome.in/wp-json/wc/v3/customers', {
+        method: 'POST',
+        headers: { Authorization: auth, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          username: shopUsername(digits),
+          email: shopEmail(digits),
+          password: createHash('sha256').update(digits + '-rua-shop-' + Date.now()).digest('hex').slice(0, 24),
+        }),
+        redirect: 'error',
+        signal: AbortSignal.timeout(10000),
+      });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error('Shop save failed: HTTP ' + response.status + ' ' + text.slice(0, 300));
+  }
+  return customerToShop(await response.json());
+}
+
 async function createWooOrder(order) {
   const { RUA_WP_USER, RUA_WP_APP_PASSWORD } = process.env;
   if (!RUA_WP_USER || !RUA_WP_APP_PASSWORD) throw new Error('WooCommerce credentials missing');
@@ -237,6 +360,7 @@ async function createWooOrder(order) {
       { key: '_rua_shop', value: order.shop ?? '' },
       ],
   };
+  if (order.shopCustomerId) payload.customer_id = order.shopCustomerId;
   const response = await fetch('https://ruahome.in/wp-json/wc/v3/orders', {
     method: 'POST',
     headers: { Authorization: 'Basic ' + auth, 'Content-Type': 'application/json' },
@@ -250,10 +374,10 @@ async function createWooOrder(order) {
   return response.json();
 }
 
-function readJsonBody(req) {
+function readJsonBody(req, maxBytes = 8 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', chunk => { data += chunk; if (data.length > 1e6) req.destroy(); });
+    req.on('data', chunk => { data += chunk; if (data.length > maxBytes) req.destroy(); });
     req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });
@@ -277,6 +401,28 @@ export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcR
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(products));
       } else if (req.method === 'GET' && req.url === '/api/staff') {
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(staffDirectory()));
+      } else if (req.method === 'GET' && req.url.startsWith('/api/shop?')) {
+        const query = new URL(req.url, 'http://internal');
+        const shop = await findShopByPhone(query.searchParams.get('phone'));
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(shop || {}));
+      } else if (req.method === 'POST' && req.url === '/api/shop') {
+        const body = await readJsonBody(req);
+        const digits = String(body.phone || '').replace(/\D/g, '');
+        const existing = digits.length === 10 ? await findShopByPhone(digits).catch(() => null) : null;
+        let panUrl = existing?.panUrl || '';
+        let aadhaarUrl = existing?.aadhaarUrl || '';
+        if (body.panPhoto) panUrl = await uploadShopPhoto(body.panPhoto, 'pan-' + digits);
+        if (body.aadhaarPhoto) aadhaarUrl = await uploadShopPhoto(body.aadhaarPhoto, 'aadhaar-' + digits);
+        const shop = await upsertShop({
+          name: body.name,
+          address: body.address,
+          phone: digits,
+          secondaryPhone: body.secondaryPhone,
+          gst: body.gst,
+          panUrl,
+          aadhaarUrl,
+        });
+        res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(shop));
       } else if (req.method === 'POST' && req.url === '/api/otp/send') {
         const body = await readJsonBody(req);
         const order = Array.isArray(body.lines) ? { lines: body.lines } : null;
@@ -305,10 +451,10 @@ export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcR
       }
     }
     catch(err) {
-      console.error('Catalogue error:', err);
+      console.error('Request error:', err);
       if (res.headersSent) res.end();
-      else res.writeHead(503, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Catalogue unavailable' }));
+      else res.writeHead(err.statusCode || 503, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: err.statusCode ? err.message : 'Catalogue unavailable' }));
     }
   });
 }
