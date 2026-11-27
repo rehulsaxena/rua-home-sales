@@ -213,6 +213,13 @@ async function writeOrder(order) {
   return orders.length;
 }
 
+async function nextOrderNumber() {
+  const orders = await readOrders();
+  const year = new Date().getFullYear();
+  const countThisYear = orders.filter(o => new Date(o.receivedAt || 0).getFullYear() === year).length;
+  return String(countThisYear + 1).padStart(3, '0') + '_' + year;
+}
+
 function wcAuthHeader() {
   const { RUA_WP_USER, RUA_WP_APP_PASSWORD } = process.env;
   if (!RUA_WP_USER || !RUA_WP_APP_PASSWORD) throw new Error('WooCommerce credentials missing');
@@ -351,11 +358,12 @@ async function createWooOrder(order) {
     set_paid: false,
     billing: { first_name: order.shop || 'Wholesale customer', phone: order.phone || '' },
     line_items: lineItems,
-    customer_note: 'Booked via RUA Sales App by ' + (order.staffName || ('staff #' + order.staffId)),
+    customer_note: 'Order ' + (order.orderNumber || '') + ' booked via RUA Sales App by ' + (order.staffName || ('staff #' + order.staffId)),
     meta_data: [
-      { key: '_rua_staff_id', value: String(order.staffId ?? '') },
-      { key: '_rua_staff_name', value: order.staffName ?? '' },
-      { key: '_rua_shop', value: order.shop ?? '' },
+      { key: 'rua_order_number', value: order.orderNumber ?? '' },
+      { key: 'rua_staff_id', value: String(order.staffId ?? '') },
+      { key: 'rua_staff_name', value: order.staffName ?? '' },
+      { key: 'rua_shop', value: order.shop ?? '' },
       ],
   };
   if (order.shopCustomerId) payload.customer_id = order.shopCustomerId;
@@ -432,15 +440,16 @@ export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcR
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok }));
       } else if (req.method === 'POST' && req.url === '/api/orders') {
         const body = await readJsonBody(req);
-        const order = { ...body, receivedAt: new Date().toISOString() };
+        const orderNumber = await nextOrderNumber();
+        const order = { ...body, orderNumber, receivedAt: new Date().toISOString() };
         let wooOrder = null, wooError = null;
         try { wooOrder = await createWooOrder(order); }
         catch (err) { wooError = err.message; console.error('WooCommerce order error:', err); }
         order.wooOrderId = wooOrder?.id ?? null;
-        const count = await writeOrder(order);
+        await writeOrder(order);
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({
           ok: true,
-          orderNumber: wooOrder?.number ? ('WC-' + wooOrder.number) : ('RH-' + count),
+          orderNumber,
           synced: !!wooOrder,
           warning: wooError ? 'Order saved locally but could not sync to WooCommerce yet: ' + wooError : undefined,
         }));
