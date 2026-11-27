@@ -40,6 +40,7 @@ export async function loadCatalogue(requestPage) {
 
 function bridgeRequest(path, page) {
   const { RUA_WP_USER, RUA_WP_APP_PASSWORD } = process.env;
+  console.error('WP user:', JSON.stringify(RUA_WP_USER), 'pw length:', RUA_WP_APP_PASSWORD ? RUA_WP_APP_PASSWORD.length : 0, 'pw has spaces:', RUA_WP_APP_PASSWORD ? RUA_WP_APP_PASSWORD.includes(' ') : false);
   if (!RUA_WP_USER || !RUA_WP_APP_PASSWORD) throw new Error('Catalogue credentials missing');
   const auth = Buffer.from(RUA_WP_USER + ':' + RUA_WP_APP_PASSWORD).toString('base64');
   return fetch('https://ruahome.in/wp-json/rua-sales/v1/' + path + '?per_page=50&page=' + page, {
