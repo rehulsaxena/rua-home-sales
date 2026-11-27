@@ -19,14 +19,14 @@
 </section>
 
 <section id="pageCatalogue" hidden>
-<section><b id="shopHeading"></b><button id="changeShop" type="button" class="linkbtn">Change shop</button><label>Customer pricing tier</label><select id="tier"><option value="0">Standard</option><option value="10">Preferred (&#8377;10 off per unit)</option></select></section>
+<section><b id="shopHeading"></b><button id="changeShop" type="button" class="linkbtn">Change shop</button></section>
 <section><b>Product catalogue</b><label for="categoryFilter">Category</label><select id="categoryFilter"><option value="">All categories</option></select><label for="search">Find a product</label><input id="search" type="search" placeholder="Search name or SKU"><p id="catalogueStatus" role="status"></p><div id="products"></div></section>
 <section><b>Order summary</b><div id="cart"></div><p id="total"></p><button id="send">Generate demo OTP</button><div id="otpArea" hidden><p id="hint"></p><input id="otp" inputmode="numeric" placeholder="Enter demo OTP"><button id="confirm">Confirm demo order</button></div><p id="status" role="status"></p></section>
 <section><b>Confirmed orders (this session)</b><div id="orders"></div></section>
 </section>
 
 </main><script>
-const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null,currentShop=null;const money=n=>'\u20B9'+n.toFixed(2);function tierDiscount(){return Number($('tier').value)||0;}
+const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null,currentShop=null,cartLineSeq=1;const money=n=>'\u20B9'+n.toFixed(2);
 function showPage(name){
   $('pageLogin').hidden = name !== 'login';
   $('pageShop').hidden = name !== 'shop';
@@ -34,16 +34,16 @@ function showPage(name){
 }
 function refreshPrices(){
   for (const row of catalogueRows.values()) {
-    const net = Math.max(0, row.price - tierDiscount());
-    row.el.textContent = row.name + ' \u2022 Price ' + money(net) +
+    row.el.textContent = row.name + ' \u2022 List price ' + money(row.price) +
       ' \u2022 ' + (row.stock === 0 ? 'Out of stock' : row.stock == null ? 'Quantity unavailable' : 'Stock: ' + row.stock);
   }
 }
-function addToCart(id, qtyInput) {
+function addToCart(id, qtyInput, priceInput) {
   const qty = Number(qtyInput.value);
+  const rate = Number(priceInput.value);
   if (!products.has(id) || !Number.isSafeInteger(qty) || qty < 1 || qty > 100000) return alert('Enter a valid quantity');
-  const existing = cart.find(c => c.id === id);
-  if (existing) existing.qty += qty; else cart.push({ id, qty });
+  if (!Number.isFinite(rate) || rate < 0) return alert('Enter a valid price');
+  cart.push({ lineId: cartLineSeq++, id, qty, rate });
   qtyInput.value = 1;
   render();
 }
@@ -54,7 +54,7 @@ function filterProducts() {
   for (const article of $('products').children) {
     const matchesSearch = article.dataset.search.includes(query);
     const matchesCategory = !category || article.dataset.categories.split('|').includes(category);
-    article.hidden = !(matchesSearch && matchesCategory);
+    article.style.display = (matchesSearch && matchesCategory) ? 'flex' : 'none';
   }
 }
 
@@ -95,13 +95,21 @@ async function loadProducts() {
         qtyInput.type = 'number';
         qtyInput.min = '1';
         qtyInput.value = '1';
-        qtyInput.style.cssText = 'width:70px;flex:none';
+        qtyInput.style.cssText = 'width:60px;flex:none';
+        qtyInput.title = 'Quantity';
+        const priceInput = document.createElement('input');
+        priceInput.type = 'number';
+        priceInput.min = '0';
+        priceInput.step = '0.01';
+        priceInput.value = price.toFixed(2);
+        priceInput.style.cssText = 'width:90px;flex:none';
+        priceInput.title = 'Order price per unit (editable)';
         const addBtn = document.createElement('button');
         addBtn.type = 'button';
         addBtn.textContent = 'Add';
         addBtn.style.cssText = 'width:auto;margin-top:0;flex:none';
-        addBtn.onclick = () => addToCart(p.id, qtyInput);
-        article.append(qtyInput, addBtn);
+        addBtn.onclick = () => addToCart(p.id, qtyInput, priceInput);
+        article.append(qtyInput, priceInput, addBtn);
       } else {
         text.textContent = p.name + ' \u2022 Price unavailable \u2022 ' + (stock === 0 ? 'Out of stock' : 'Quantity unavailable');
       }
@@ -279,9 +287,8 @@ loadProducts();
 $('search').oninput = filterProducts;
 $('categoryFilter').onchange = filterProducts;
 function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textContent='';}
-  function lines(){return cart.map(c=>{let p=products.get(c.id),rate=Math.max(0,Math.round(p.price*100)-Number($('tier').value)*100-(c.qty>=24?1500:0));return {...c,name:p.name,rate:rate/100,stock:p.stock,pool:p.stock_pool??p.id,parentId:p.parent_id??null,total:rate*c.qty/100}})}
-  function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' \u00D7 '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.id!==l.id);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))}
-  $('tier').onchange=()=>{refreshPrices();render();};
+  function lines(){return cart.map(c=>{let p=products.get(c.id);return {...c,name:p.name,stock:p.stock,pool:p.stock_pool??p.id,parentId:p.parent_id??null,total:Math.round(c.rate*c.qty*100)/100}})}
+  function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' \u00D7 '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.lineId!==l.lineId);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))}
 
   function queueOfflineOrder(order){
     const queue = JSON.parse(localStorage.getItem('rua_pending_orders') || '[]');
