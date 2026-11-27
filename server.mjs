@@ -294,8 +294,6 @@ async function upsertShop(shop) {
   if (digits.length !== 10) throw badRequest('Enter a valid 10-digit primary phone number');
   if (!shop.name || !shop.name.trim()) throw badRequest('Shop name is required');
   if (!shop.address || !shop.address.trim()) throw badRequest('Shop address is required');
-  if (!shop.panUrl) throw badRequest('PAN card photo is required');
-  if (!shop.gst && !shop.aadhaarUrl) throw badRequest('Aadhaar card photo or GST number is required');
 
   const existing = await findShopByPhone(digits).catch(() => null);
   const payload = {
