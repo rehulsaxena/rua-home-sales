@@ -1,5 +1,37 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#f4f5f7;color:#17252a;margin:0}header{background:#153d39;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px}label{display:block;margin:12px 0 4px}input,select,button{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#153d39;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#a54a00;font-weight:bold} .ok{color:#146c2e;font-weight:bold}article{padding:10px 0;border-bottom:1px solid #ddd}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main><section><b>Demo only &#8212; no live OTP or customer data</b><p>Use fictional customer information. Catalogue supplied by ruahome.in. Storefront prices are references. Wholesale rates and OTP are simulated.</p><label>Sales executive</label><select id="staff"></select><label>Retail shop</label><input id="shop" placeholder="Demo shop"><label>Owner mobile</label><input id="phone" inputmode="numeric" placeholder="10-digit demo number"><label>Customer pricing tier</label><select id="tier"><option value="0">Standard</option><option value="10">Preferred (\u20B910 off per unit)</option></select></section><section><b>Product catalogue</b><label for="categoryFilter">Category</label><select id="categoryFilter"><option value="">All categories</option></select><label for="search">Find a product</label><input id="search" type="search" placeholder="Search name or SKU"><p id="catalogueStatus" role="status"></p><div id="products"></div></section><section><b>Order summary</b><div id="cart"></div><p id="total"></p><button id="send">Generate demo OTP</button><div id="otpArea" hidden><p id="hint"></p><input id="otp" inputmode="numeric" placeholder="Enter demo OTP"><button id="confirm">Confirm demo order</button></div><p id="status" role="status"></p></section><section><b>Confirmed orders (this session)</b><div id="orders"></div></section></main><script>
-const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null;const money=n=>'\u20B9'+n.toFixed(2);function tierDiscount(){return Number($('tier').value)||0;}
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#f4f5f7;color:#17252a;margin:0}header{background:#153d39;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px}label{display:block;margin:12px 0 4px}input,select,button,textarea{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#153d39;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#a54a00;font-weight:bold} .ok{color:#146c2e;font-weight:bold}article{padding:10px 0;border-bottom:1px solid #ddd}.secondary{background:#a54a00}.linkbtn{background:none;color:#153d39;text-decoration:underline;width:auto;padding:4px}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main>
+
+<section id="pageLogin"><b>Demo only &#8212; no live OTP or customer data</b><p>Use fictional customer information. Catalogue supplied by ruahome.in. Storefront prices are references. Wholesale rates and OTP are simulated.</p><label>Sales executive</label><select id="staff"></select></section>
+
+<section id="pageShop" hidden><b>Shop details</b><p>Enter the retail shop's details once &#8212; they are saved and auto-filled on the shop's next order.</p>
+<label>Primary mobile number (required, used for OTP)</label><input id="shopPhone" inputmode="numeric" placeholder="10-digit mobile">
+<p id="shopLookupStatus" role="status"></p>
+<label>Shop name</label><input id="shopName" placeholder="Shop name">
+<label>Address</label><textarea id="shopAddress" rows="2" placeholder="Shop address"></textarea>
+<label>Secondary mobile number (optional)</label><input id="shopPhone2" inputmode="numeric" placeholder="10-digit mobile">
+<label>PAN card photo (required)</label><input id="shopPan" type="file" accept="image/*" capture="environment">
+<p id="shopPanStatus" role="status"></p>
+<label>Aadhaar card photo (required if no GST number)</label><input id="shopAadhaar" type="file" accept="image/*" capture="environment">
+<p id="shopAadhaarStatus" role="status"></p>
+<label>GST number (required if no Aadhaar photo)</label><input id="shopGst" placeholder="GSTIN">
+<button id="shopContinue" type="button">Continue to catalogue</button>
+<p id="shopStatus" role="status"></p>
+<button id="shopBack" type="button" class="linkbtn">Log out</button>
+</section>
+
+<section id="pageCatalogue" hidden>
+<section><b id="shopHeading"></b><button id="changeShop" type="button" class="linkbtn">Change shop</button><label>Customer pricing tier</label><select id="tier"><option value="0">Standard</option><option value="10">Preferred (&#8377;10 off per unit)</option></select></section>
+<section><b>Product catalogue</b><label for="categoryFilter">Category</label><select id="categoryFilter"><option value="">All categories</option></select><label for="search">Find a product</label><input id="search" type="search" placeholder="Search name or SKU"><p id="catalogueStatus" role="status"></p><div id="products"></div></section>
+<section><b>Order summary</b><div id="cart"></div><p id="total"></p><button id="send">Generate demo OTP</button><div id="otpArea" hidden><p id="hint"></p><input id="otp" inputmode="numeric" placeholder="Enter demo OTP"><button id="confirm">Confirm demo order</button></div><p id="status" role="status"></p></section>
+<section><b>Confirmed orders (this session)</b><div id="orders"></div></section>
+</section>
+
+</main><script>
+const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null,currentShop=null;const money=n=>'\u20B9'+n.toFixed(2);function tierDiscount(){return Number($('tier').value)||0;}
+function showPage(name){
+  $('pageLogin').hidden = name !== 'login';
+  $('pageShop').hidden = name !== 'shop';
+  $('pageCatalogue').hidden = name !== 'catalogue';
+}
 function refreshPrices(){
   for (const row of catalogueRows.values()) {
     const net = Math.max(0, row.price - tierDiscount());
@@ -81,7 +113,7 @@ async function loadProducts() {
     }
     status.textContent = items.length + ' products and variants ' + (offline ? 'loaded from offline cache.' : 'loaded from WooCommerce.');
 }
-  
+
 loadProducts();
 
   async function sha256hex(text) {
@@ -100,13 +132,7 @@ loadProducts();
   staffLoginStatus.setAttribute('role', 'status');
   staffLoginStatus.id = 'staffLoginStatus';
   staffLoginStatus.style.margin = '10px 0';
-  const staffLogoutBtn = document.createElement('button');
-  staffLogoutBtn.type = 'button';
-  staffLogoutBtn.textContent = 'Log out';
-  staffLogoutBtn.id = 'staffLogoutBtn';
-  staffLogoutBtn.hidden = true;
-  staffLogoutBtn.style.background = '#a54a00';
-  $('staff').after(staffPassword, staffLoginBtn, staffLoginStatus, staffLogoutBtn);
+  $('staff').after(staffPassword, staffLoginBtn, staffLoginStatus);
 
   async function loadStaff() {
     try {
@@ -131,36 +157,131 @@ loadProducts();
     const pwHash = await sha256hex(staffPassword.value);
     if (pwHash !== staff.passwordHash) { staffLoginStatus.textContent = '\u2717 Incorrect password'; staffLoginStatus.className = 'warn'; return; }
     loggedInStaff = staff;
-    staffLoginStatus.textContent = '\u2713 Logged in as ' + staff.name;
-    staffLoginStatus.className = 'ok';
-    $('staff').disabled = true;
-    staffPassword.disabled = true;
-    staffLoginBtn.disabled = true;
-    staffLoginBtn.textContent = 'Logged in';
-    staffLoginBtn.hidden = true;
-    staffLogoutBtn.hidden = false;
+    staffPassword.value = '';
+    staffLoginStatus.textContent = '';
+    resetShopForm();
+    showPage('shop');
   };
 
-  staffLogoutBtn.onclick = () => {
+  function logout(){
     loggedInStaff = null;
+    currentShop = null;
     staffPassword.value = '';
     staffLoginStatus.textContent = 'Logged out';
     staffLoginStatus.className = '';
-    $('staff').disabled = false;
-    staffPassword.disabled = false;
-    staffLoginBtn.disabled = false;
-    staffLoginBtn.textContent = 'Log in';
-    staffLoginBtn.hidden = false;
-    staffLogoutBtn.hidden = true;
+    showPage('login');
+  }
+  $('shopBack').onclick = logout;
+  $('changeShop').onclick = () => { resetShopForm(); showPage('shop'); };
+
+  function resetShopForm(){
+    $('shopPhone').value = '';
+    $('shopName').value = '';
+    $('shopAddress').value = '';
+    $('shopPhone2').value = '';
+    $('shopPan').value = '';
+    $('shopAadhaar').value = '';
+    $('shopGst').value = '';
+    $('shopLookupStatus').textContent = '';
+    $('shopPanStatus').textContent = '';
+    $('shopAadhaarStatus').textContent = '';
+    $('shopStatus').textContent = '';
+    existingShop = null;
+  }
+
+  let existingShop = null;
+
+  async function lookupShop(){
+    const digits = $('shopPhone').value.replace(/\D/g, '');
+    if (digits.length !== 10) { existingShop = null; $('shopLookupStatus').textContent = ''; return; }
+    $('shopLookupStatus').textContent = 'Checking for an existing shop\u2026';
+    try {
+      const response = await fetch('/api/shop?phone=' + digits);
+      const shop = await response.json();
+      if (shop && shop.customerId) {
+        existingShop = shop;
+        $('shopName').value = shop.name || '';
+        $('shopAddress').value = shop.address || '';
+        $('shopPhone2').value = shop.secondaryPhone || '';
+        $('shopGst').value = shop.gst || '';
+        $('shopPanStatus').textContent = shop.panUrl ? '\u2713 PAN already on file (upload again to replace)' : '';
+        $('shopPanStatus').className = shop.panUrl ? 'ok' : '';
+        $('shopAadhaarStatus').textContent = shop.aadhaarUrl ? '\u2713 Aadhaar already on file (upload again to replace)' : '';
+        $('shopAadhaarStatus').className = shop.aadhaarUrl ? 'ok' : '';
+        $('shopLookupStatus').textContent = '\u2713 Existing shop found \u2014 details filled in below';
+        $('shopLookupStatus').className = 'ok';
+      } else {
+        existingShop = null;
+        $('shopLookupStatus').textContent = 'New shop \u2014 fill in the details below';
+        $('shopLookupStatus').className = '';
+      }
+    } catch {
+      $('shopLookupStatus').textContent = 'Could not check for an existing shop (offline?)';
+      $('shopLookupStatus').className = 'warn';
+    }
+  }
+  $('shopPhone').onchange = lookupShop;
+
+  function resizeImageToDataUrl(file, maxDim, quality) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = () => { img.onerror = reject; img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      }; img.src = reader.result; };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  $('shopContinue').onclick = async () => {
+    const digits = $('shopPhone').value.replace(/\D/g, '');
+    if (digits.length !== 10) return alert('Enter a valid 10-digit primary mobile number');
+    if (!$('shopName').value.trim()) return alert('Enter the shop name');
+    if (!$('shopAddress').value.trim()) return alert('Enter the shop address');
+    const hasPan = $('shopPan').files[0] || (existingShop && existingShop.panUrl);
+    if (!hasPan) return alert('Upload the PAN card photo');
+    const hasAadhaarOrGst = $('shopAadhaar').files[0] || $('shopGst').value.trim() || (existingShop && (existingShop.aadhaarUrl || existingShop.gst));
+    if (!hasAadhaarOrGst) return alert('Upload the Aadhaar card photo or enter a GST number');
+    $('shopStatus').textContent = 'Saving shop details\u2026';
+    $('shopStatus').className = '';
+    $('shopContinue').disabled = true;
+    try {
+      const payload = {
+        phone: digits,
+        name: $('shopName').value.trim(),
+        address: $('shopAddress').value.trim(),
+        secondaryPhone: $('shopPhone2').value.replace(/\D/g, ''),
+        gst: $('shopGst').value.trim(),
+      };
+      if ($('shopPan').files[0]) payload.panPhoto = await resizeImageToDataUrl($('shopPan').files[0], 1280, 0.72);
+      if ($('shopAadhaar').files[0]) payload.aadhaarPhoto = await resizeImageToDataUrl($('shopAadhaar').files[0], 1280, 0.72);
+      const response = await fetch('/api/shop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not save shop details');
+      currentShop = result;
+      $('shopHeading').textContent = 'Shop: ' + currentShop.name + ' (' + currentShop.phone + ')';
+      $('shopStatus').textContent = '';
+      showPage('catalogue');
+    } catch (err) {
+      $('shopStatus').textContent = err.message || 'Could not save shop details. Check your connection and try again.';
+      $('shopStatus').className = 'warn';
+    } finally {
+      $('shopContinue').disabled = false;
+    }
   };
-  
+
 $('search').oninput = filterProducts;
 $('categoryFilter').onchange = filterProducts;
 function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textContent='';}
   function lines(){return cart.map(c=>{let p=products.get(c.id),rate=Math.max(0,Math.round(p.price*100)-Number($('tier').value)*100-(c.qty>=24?1500:0));return {...c,name:p.name,rate:rate/100,stock:p.stock,pool:p.stock_pool??p.id,parentId:p.parent_id??null,total:rate*c.qty/100}})}
   function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' \u00D7 '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.id!==l.id);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))}
   $('tier').onchange=()=>{refreshPrices();render();};
-  for(const id of ['shop','phone'])$(id).oninput=invalidate;
 
   function queueOfflineOrder(order){
     const queue = JSON.parse(localStorage.getItem('rua_pending_orders') || '[]');
@@ -214,8 +335,9 @@ function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textCont
 
   $('send').onclick = async () => {
     if (!loggedInStaff) return alert('Log in first');
-    if (!cart.length || !$('shop').value.trim() || !/^\d{10}$/.test($('phone').value)) return alert('Enter shop, 10-digit customer mobile and products');
-    const order = { shop: $('shop').value, phone: $('phone').value, staffId: loggedInStaff.id, staffName: loggedInStaff.name, lines: lines() };
+    if (!currentShop) return alert('Enter shop details first');
+    if (!cart.length) return alert('Add at least one product');
+    const order = { shop: currentShop.name, phone: currentShop.phone, shopCustomerId: currentShop.customerId, staffId: loggedInStaff.id, staffName: loggedInStaff.name, lines: lines() };
     try {
       const response = await fetch('/api/otp/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: order.phone, lines: order.lines }) });
       if (!response.ok) throw new Error('send failed');
