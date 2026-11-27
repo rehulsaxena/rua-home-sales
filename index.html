@@ -1,0 +1,40 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#f4f5f7;color:#17252a;margin:0}header{background:#153d39;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px}label{display:block;margin:12px 0 4px}input,select,button{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#153d39;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#a54a00}article{padding:10px 0;border-bottom:1px solid #ddd}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main><section><b>Demo only — no live OTP or customer data</b><p>Use fictional customer information. Catalogue supplied by ruahome.in. Storefront prices are references. Wholesale rates and OTP are simulated.</p><label>Sales executive</label><select id="staff"></select><label>Retail shop</label><input id="shop" placeholder="Demo shop"><label>Owner mobile</label><input id="phone" inputmode="numeric" placeholder="10-digit demo number"><label>Customer pricing tier</label><select id="tier"><option value="0">Standard</option><option value="10">Preferred (₹10 off per unit)</option></select></section><section><b>Product catalogue</b><label for="search">Find a product</label><input id="search" type="search" placeholder="Search name or SKU"><p id="catalogueStatus" role="status"></p><div id="products"></div><button id="add" disabled>Add selected product</button><select id="product"></select><label>Quantity (pieces)</label><input id="qty" type="number" min="1" value="1"></section><section><b>Order summary</b><div id="cart"></div><p id="total"></p><button id="send">Generate demo OTP</button><div id="otpArea" hidden><p id="hint"></p><input id="otp" inputmode="numeric" placeholder="Enter demo OTP"><button id="confirm">Confirm demo order</button></div><p id="status" role="status"></p></section><section><b>Confirmed orders (this session)</b><div id="orders"></div></section></main><script>
+const $=id=>document.getElementById(id), products=new Map();let cart=[],pending=null,orders=[];const money=n=>'₹'+n.toFixed(2);for(let i=1;i<=5;i++)$('staff').add(new Option('Executive '+i,i));async function loadProducts() {
+  const status = $('catalogueStatus');
+  status.textContent = 'Loading the storefront catalogue…';
+  try {
+    const response = await fetch('/api/catalogue');
+    if (!response.ok) throw new Error('Catalogue unavailable');
+    const items = await response.json();
+    for (const p of items) {
+      const price = p.price === '' || p.price == null ? null : Number(p.price);
+      const stock = p.stock_status === 'outofstock' ? 0 : p.stock_quantity;
+      const article = document.createElement('article');
+      article.dataset.search = [p.name, p.sku, ...(p.categories ?? []).map(category => category.name ?? category)].join(' ').toLowerCase();
+      article.textContent = p.name + ' • SKU ' + (p.sku || '—') +
+        ' • Website price ' + (price == null ? 'unavailable' : money(price)) +
+        ' • ' + (stock === 0 ? 'Out of stock' : stock == null ? 'Quantity unavailable' : 'Stock: ' + stock);
+      $('products').append(article);
+      if (price == null || !Number.isFinite(price) || price < 0) continue;
+      products.set(p.id, { ...p, price, stock });
+      $('product').add(new Option(p.name, p.id));
+    }
+    $('add').disabled = products.size === 0;
+    status.textContent = items.length + ' products and variants loaded from WooCommerce.';
+  } catch {
+    status.textContent = 'WooCommerce catalogue unavailable. Order entry is paused.';
+  }
+}
+loadProducts();
+$('search').oninput = () => {
+  const query = $('search').value.trim().toLowerCase();
+  for (const article of $('products').children) article.hidden = !article.dataset.search.includes(query);
+  for (const option of $('product').options) {
+    const product = products.get(Number(option.value));
+    option.hidden = ![product.name, product.sku, ...(product.categories ?? []).map(category => category.name ?? category)].join(' ').toLowerCase().includes(query);
+  }
+  const firstMatch = Array.from($('product').options).find(option => !option.hidden);
+  $('product').value = firstMatch?.value ?? '';
+  $('add').disabled = !firstMatch;
+};
+function invalidate(){pending=null;$('otpArea').hidden=true;$('status').textContent='';}function lines(){return cart.map(c=>{let p=products.get(c.id),rate=Math.max(0,Math.round(p.price*100)-Number($('tier').value)*100-(c.qty>=24?1500:0));return {...c,name:p.name,rate:rate/100,stock:p.stock,pool:p.stock_pool??p.id,total:rate*c.qty/100}})}function render(){invalidate();$('cart').replaceChildren();for(const l of lines()){let a=document.createElement('article');a.textContent=l.name+' × '+l.qty+' @ '+money(l.rate)+' = '+money(l.total);if(l.stock==null||lines().filter(item=>item.pool===l.pool).reduce((qty,item)=>qty+item.qty,0)>l.stock){let w=document.createElement('p');w.className='warn';w.textContent=l.stock==null?'Stock warning: quantity unavailable':'Stock warning: only '+l.stock+' available across the selected options';a.append(w)}let b=document.createElement('button');b.textContent='Remove';b.onclick=()=>{cart=cart.filter(c=>c.id!==l.id);render()};a.append(b);$('cart').append(a)}$('total').textContent='Subtotal (tax not configured): '+money(lines().reduce((s,l)=>s+l.total,0))} $('add').onclick=()=>{let id=Number($('product').value),qty=Number($('qty').value);if(!products.has(id)||!Number.isSafeInteger(qty)||qty<1||qty>100000)return alert('Enter a valid quantity');let c=cart.find(c=>c.id===id);if(c)c.qty+=qty;else cart.push({id,qty});render()};$('tier').onchange=render;for(const id of ['shop','phone','staff'])$(id).oninput=invalidate;$('send').onclick=()=>{if(!cart.length||!$('shop').value.trim()||!/^\d{10}$/.test($('phone').value))return alert('Enter shop, 10-digit demo mobile and products');let code=String(100000+crypto.getRandomValues(new Uint32Array(1))[0]%900000);pending={code,expires:Date.now()+300000,attempts:0,shop:$('shop').value,staff:$('staff').value,lines:lines()};$('hint').textContent='Simulation only: '+code+' (valid 5 minutes)';$('otp').value='';$('otpArea').hidden=false};$('confirm').onclick=()=>{if(!pending||Date.now()>pending.expires||++pending.attempts>5){invalidate();$('status').textContent='Expired or attempt limit reached';return}if($('otp').value!==pending.code){$('status').textContent='Incorrect demo OTP';return}orders.push(pending);let a=document.createElement('article');a.textContent='RH-DEMO-'+orders.length+' • '+pending.shop+' • Executive '+pending.staff+' • '+money(pending.lines.reduce((s,l)=>s+l.total,0));$('orders').prepend(a);cart=[];render();$('status').textContent='Demo order confirmed'};render();</script></html>
