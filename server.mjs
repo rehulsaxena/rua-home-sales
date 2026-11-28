@@ -91,6 +91,7 @@ function staffDirectory() {
 }
 
 const otpStore = new Map();
+const verifiedOtpStore = new Map();
 
 function normalizeIndianMobile(phone) {
   const digits = String(phone).replace(/\D/g, '');
@@ -198,8 +199,21 @@ function verifyOtp(phone, code) {
   const entry = otpStore.get(phone);
   if (!entry || Date.now() > entry.expires) return false;
   const ok = entry.code === String(code);
-  if (ok) otpStore.delete(phone);
+  if (ok) {
+    otpStore.delete(phone);
+    verifiedOtpStore.set(phone, Date.now());
+  }
   return ok;
+}
+
+// Server-side record that this phone completed OTP verification, consumed once
+// the matching order is created. This is what lets an order carry proof (date/time
+// + phone) that the customer approved it, independent of anything the client sends.
+function consumeOtpVerification(phone) {
+  const at = verifiedOtpStore.get(phone);
+  if (!at || Date.now() - at > 15 * 60 * 1000) return null; // 15 min to complete the order after OTP
+  verifiedOtpStore.delete(phone);
+  return new Date(at).toISOString();
 }
 
 async function readOrders() {
@@ -362,12 +376,14 @@ async function createWooOrder(order) {
     set_paid: false,
     billing: { first_name: order.shop || 'Wholesale customer', phone: order.phone || '' },
     line_items: lineItems,
-    customer_note: 'Order ' + (order.orderNumber || '') + ' booked via RUA Sales App by ' + (order.staffName || ('staff #' + order.staffId)),
+    customer_note: 'Order ' + (order.orderNumber || '') + ' booked via RUA Sales App by ' + (order.staffName || ('staff #' + order.staffId)) + (order.otpVerifiedAt ? '. Customer OTP verified at ' + order.otpVerifiedAt + ' for ' + (order.phone || 'the mobile number on file') + '.' : ' -- NOTE: no OTP verification record found for this order.'),
     meta_data: [
       { key: 'rua_order_number', value: order.orderNumber ?? '' },
       { key: 'rua_staff_id', value: String(order.staffId ?? '') },
       { key: 'rua_staff_name', value: order.staffName ?? '' },
       { key: 'rua_shop', value: order.shop ?? '' },
+      { key: 'rua_otp_verified_at', value: order.otpVerifiedAt ?? '' },
+      { key: 'rua_otp_phone', value: order.otpVerifiedAt ? (order.phone ?? '') : '' },
       ],
   };
   if (order.shopCustomerId) payload.customer_id = order.shopCustomerId;
@@ -448,8 +464,9 @@ export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcR
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ ok }));
       } else if (req.method === 'POST' && req.url === '/api/orders') {
         const body = await readJsonBody(req);
+        const otpVerifiedAt = consumeOtpVerification(String(body.phone || ''));
         const orderNumber = await nextOrderNumber();
-        const order = { ...body, orderNumber, receivedAt: new Date().toISOString() };
+        const order = { ...body, orderNumber, receivedAt: new Date().toISOString(), otpVerifiedAt };
         let wooOrder = null, wooError = null;
         try { wooOrder = await createWooOrder(order); }
         catch (err) { wooError = err.message; console.error('WooCommerce order error:', err); }
