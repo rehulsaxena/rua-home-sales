@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#ffffff;color:#111;margin:0}header{background:#111;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px;border:1px solid #eee}label{display:block;margin:12px 0 4px}input,select,button,textarea{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#c0102b;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#c0102b;font-weight:bold} .ok{color:#111;font-weight:bold}article{padding:10px 0;border-bottom:1px solid #ddd}.secondary{background:#111}.linkbtn{background:none;color:#c0102b;text-decoration:underline;width:auto;padding:4px}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main>
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RUA HOME Sales prototype</title><style>body{font:16px system-ui;background:#ffffff;color:#111;margin:0}header{background:#111;color:white;padding:20px}main{max-width:600px;margin:auto;padding:16px}section{background:white;padding:16px;border-radius:12px;margin-bottom:14px;border:1px solid #eee}label{display:block;margin:12px 0 4px}input,select,button,textarea{box-sizing:border-box;width:100%;padding:12px;font:inherit;border:1px solid #bbb;border-radius:8px}button{background:#c0102b;color:white;margin-top:12px;border:0}small{color:#555} .warn{color:#c0102b;font-weight:bold} .ok{color:#111;font-weight:bold} .busy{color:#666}article{padding:10px 0;border-bottom:1px solid #ddd}.secondary{background:#111}.linkbtn{background:none;color:#c0102b;text-decoration:underline;width:auto;padding:4px}</style><header><b>RUA HOME / SALES</b><div>Order booking prototype</div></header><main>
 
 <section id="pageLogin"><b>Demo only &#8212; no live OTP or customer data</b><p>Use fictional customer information. Catalogue supplied by ruahome.in. Storefront prices are references. Wholesale rates and OTP are simulated.</p><label>Sales executive</label><select id="staff"></select></section>
 
@@ -66,6 +66,7 @@ function filterProducts() {
 async function loadProducts() {
   const status = $('catalogueStatus');
   status.textContent = 'Loading the storefront catalogue\u2026';
+  status.className = 'busy';
   let items, offline = false;
   try {
     const response = await fetch('/api/catalogue');
@@ -170,7 +171,7 @@ loadProducts();
     if (!staff) { staffLoginStatus.textContent = 'No staff selected'; staffLoginStatus.className = 'warn'; return; }
     if (!staffPassword.value) { staffLoginStatus.textContent = 'Enter the staff password'; staffLoginStatus.className = 'warn'; return; }
     staffLoginStatus.textContent = 'Checking\u2026';
-    staffLoginStatus.className = '';
+    staffLoginStatus.className = 'busy';
     const pwHash = await sha256hex(staffPassword.value);
     if (pwHash !== staff.passwordHash) { staffLoginStatus.textContent = '\u2717 Incorrect password'; staffLoginStatus.className = 'warn'; return; }
     loggedInStaff = staff;
@@ -216,6 +217,7 @@ loadProducts();
     const digits = $('shopPhone').value.replace(/\D/g, '');
     if (digits.length !== 10) { existingShop = null; $('shopLookupStatus').textContent = ''; return; }
     $('shopLookupStatus').textContent = 'Checking for an existing shop\u2026';
+    $('shopLookupStatus').className = 'busy';
     try {
       const response = await fetch('/api/shop?phone=' + digits);
       const shop = await response.json();
@@ -255,7 +257,7 @@ loadProducts();
       return;
     }
     $('shopLocationStatus').textContent = 'Getting location\u2026';
-    $('shopLocationStatus').className = '';
+    $('shopLocationStatus').className = 'busy';
     navigator.geolocation.getCurrentPosition(
       pos => {
         shopLat = pos.coords.latitude;
@@ -294,7 +296,7 @@ loadProducts();
     if (!$('shopName').value.trim()) return alert('Enter the shop name');
     if (!$('shopAddress').value.trim()) return alert('Enter the shop address');
     $('shopStatus').textContent = 'Saving shop details\u2026';
-    $('shopStatus').className = '';
+    $('shopStatus').className = 'busy';
     $('shopContinue').disabled = true;
     try {
       const payload = {
