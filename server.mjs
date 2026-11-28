@@ -249,6 +249,8 @@ function customerToShop(customer) {
     gst: metaValue(customer, 'rua_gst_number'),
     panUrl: metaValue(customer, 'rua_pan_url'),
     aadhaarUrl: metaValue(customer, 'rua_aadhaar_url'),
+    latitude: metaValue(customer, 'rua_latitude') ? Number(metaValue(customer, 'rua_latitude')) : null,
+    longitude: metaValue(customer, 'rua_longitude') ? Number(metaValue(customer, 'rua_longitude')) : null,
   };
 }
 
@@ -311,6 +313,8 @@ async function upsertShop(shop) {
       { key: 'rua_gst_number', value: shop.gst || '' },
       { key: 'rua_pan_url', value: shop.panUrl || '' },
       { key: 'rua_aadhaar_url', value: shop.aadhaarUrl || '' },
+      { key: 'rua_latitude', value: shop.latitude != null ? String(shop.latitude) : '' },
+      { key: 'rua_longitude', value: shop.longitude != null ? String(shop.longitude) : '' },
     ],
   };
   const auth = wcAuthHeader();
@@ -419,6 +423,8 @@ export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcR
         let aadhaarUrl = existing?.aadhaarUrl || '';
         if (body.panPhoto) panUrl = await uploadShopPhoto(body.panPhoto, 'pan-' + digits);
         if (body.aadhaarPhoto) aadhaarUrl = await uploadShopPhoto(body.aadhaarPhoto, 'aadhaar-' + digits);
+        const latitude = body.latitude != null ? Number(body.latitude) : (existing?.latitude ?? null);
+        const longitude = body.longitude != null ? Number(body.longitude) : (existing?.longitude ?? null);
         const shop = await upsertShop({
           name: body.name,
           address: body.address,
@@ -427,6 +433,8 @@ export function createApp(requestPage = bridgeRequest, requestWcPage = bridgeWcR
           gst: body.gst,
           panUrl,
           aadhaarUrl,
+          latitude,
+          longitude,
         });
         res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(shop));
       } else if (req.method === 'POST' && req.url === '/api/otp/send') {

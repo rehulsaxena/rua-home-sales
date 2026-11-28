@@ -7,6 +7,8 @@
 <p id="shopLookupStatus" role="status"></p>
 <label>Shop name</label><input id="shopName" placeholder="Shop name">
 <label>Address</label><textarea id="shopAddress" rows="2" placeholder="Shop address"></textarea>
+<label>Shop GPS location (optional)</label><button id="shopCaptureLocation" type="button" class="linkbtn">Capture GPS location</button>
+<p id="shopLocationStatus" role="status"></p>
 <label>Secondary mobile number (optional)</label><input id="shopPhone2" inputmode="numeric" placeholder="10-digit mobile">
 <label>PAN card photo (optional)</label><input id="shopPan" type="file" accept="image/*" capture="environment">
 <p id="shopPanStatus" role="status"></p>
@@ -26,7 +28,7 @@
 </section>
 
 </main><script>
-const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null,currentShop=null,cartLineSeq=1;const money=n=>'\u20B9'+n.toFixed(2);
+const $=id=>document.getElementById(id), products=new Map(), catalogueRows=new Map();let cart=[],pending=null,orders=[],staffList=[],loggedInStaff=null,currentShop=null,cartLineSeq=1,shopLat=null,shopLng=null;const money=n=>'\u20B9'+n.toFixed(2);
 function showPage(name){
   $('pageLogin').hidden = name !== 'login';
   $('pageShop').hidden = name !== 'shop';
@@ -200,8 +202,12 @@ loadProducts();
     $('shopLookupStatus').textContent = '';
     $('shopPanStatus').textContent = '';
     $('shopAadhaarStatus').textContent = '';
+    $('shopLocationStatus').textContent = '';
+    $('shopLocationStatus').className = '';
     $('shopStatus').textContent = '';
     existingShop = null;
+    shopLat = null;
+    shopLng = null;
   }
 
   let existingShop = null;
@@ -223,6 +229,10 @@ loadProducts();
         $('shopPanStatus').className = shop.panUrl ? 'ok' : '';
         $('shopAadhaarStatus').textContent = shop.aadhaarUrl ? '\u2713 Aadhaar already on file (upload again to replace)' : '';
         $('shopAadhaarStatus').className = shop.aadhaarUrl ? 'ok' : '';
+        shopLat = shop.latitude ?? null;
+        shopLng = shop.longitude ?? null;
+        $('shopLocationStatus').textContent = (shopLat != null && shopLng != null) ? '\u2713 Location on file (' + shopLat.toFixed(5) + ', ' + shopLng.toFixed(5) + ')' : '';
+        $('shopLocationStatus').className = (shopLat != null && shopLng != null) ? 'ok' : '';
         $('shopLookupStatus').textContent = '\u2713 Existing shop found \u2014 details filled in below';
         $('shopLookupStatus').className = 'ok';
       } else {
@@ -237,6 +247,29 @@ loadProducts();
   }
   $('shopPhone').onchange = lookupShop;
   $('shopPhone').oninput = () => { if ($('shopPhone').value.replace(/\D/g, '').length === 10) lookupShop(); };
+
+  $('shopCaptureLocation').onclick = () => {
+    if (!navigator.geolocation) {
+      $('shopLocationStatus').textContent = 'GPS is not supported on this device';
+      $('shopLocationStatus').className = 'warn';
+      return;
+    }
+    $('shopLocationStatus').textContent = 'Getting location\u2026';
+    $('shopLocationStatus').className = '';
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        shopLat = pos.coords.latitude;
+        shopLng = pos.coords.longitude;
+        $('shopLocationStatus').textContent = '\u2713 Location captured (' + shopLat.toFixed(5) + ', ' + shopLng.toFixed(5) + ')';
+        $('shopLocationStatus').className = 'ok';
+      },
+      err => {
+        $('shopLocationStatus').textContent = 'Could not get location: ' + (err.message || 'permission denied');
+        $('shopLocationStatus').className = 'warn';
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
 
   function resizeImageToDataUrl(file, maxDim, quality) {
     return new Promise((resolve, reject) => {
@@ -271,6 +304,7 @@ loadProducts();
         secondaryPhone: $('shopPhone2').value.replace(/\D/g, ''),
         gst: $('shopGst').value.trim(),
       };
+      if (shopLat != null && shopLng != null) { payload.latitude = shopLat; payload.longitude = shopLng; }
       if ($('shopPan').files[0]) payload.panPhoto = await resizeImageToDataUrl($('shopPan').files[0], 1280, 0.72);
       if ($('shopAadhaar').files[0]) payload.aadhaarPhoto = await resizeImageToDataUrl($('shopAadhaar').files[0], 1280, 0.72);
       const response = await fetch('/api/shop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
