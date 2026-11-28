@@ -192,6 +192,18 @@ async function sendOtp(phone, order) {
   if (provider === 'interakt') {
     return sendOtpViaInterakt(phone, code, order);
   }
+  if (provider === 'both') {
+    const [wa, sms] = await Promise.allSettled([
+      sendOtpViaInterakt(phone, code, order),
+      sendOtpViaMsg91(phone, code),
+    ]);
+    const sentOn = [];
+    const failures = [];
+    if (wa.status === 'fulfilled') sentOn.push('whatsapp'); else failures.push('whatsapp: ' + wa.reason.message);
+    if (sms.status === 'fulfilled') sentOn.push('sms'); else failures.push('sms: ' + sms.reason.message);
+    if (!sentOn.length) throw new Error('Could not send OTP on any channel -- ' + failures.join('; '));
+    return { sent: true, channels: sentOn, warnings: failures.length ? failures : undefined };
+  }
   throw new Error('Unsupported OTP_PROVIDER: ' + provider);
 }
 
